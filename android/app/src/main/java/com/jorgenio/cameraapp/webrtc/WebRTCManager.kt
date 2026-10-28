@@ -92,7 +92,7 @@ class WebRTCManager(
         onState?.invoke("connecting")
 
         val rtcConfig = PeerConnection.RTCConfiguration(
-            listOf(IceServer.builder(emptyList()).createIceServer())
+            listOf(PeerConnection.IceServer.builder(emptyList()).createIceServer())
         ).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE

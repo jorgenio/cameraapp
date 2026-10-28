@@ -35,3 +35,7 @@ android/captures/
 *.aab
 *.keystore
 *.jks
+
+# Android local
+android/local.properties
+android/keystore.properties
