@@ -27,6 +27,8 @@ Aplicación local para visualizar, controlar PTZ, grabar, detectar movimiento y 
 
 ## Instalación
 
+### Linux / macOS
+
 ```bash
 git clone git@github.com:jorgenio/cameraapp.git
 cd cameraapp
@@ -36,10 +38,32 @@ cd cameraapp
 
 Abre [http://127.0.0.1:8080](http://127.0.0.1:8080) en tu navegador.
 
+### Windows
+
+El proyecto incluye scripts para compilar un `.exe` con PyInstaller:
+
+```bat
+build_windows.bat
+run_windows.bat
+```
+
+Ver [BUILD_WINDOWS.md](BUILD_WINDOWS.md) para el paso a paso (incluye descarga de binarios para Windows).
+
+### Android
+
+App nativa en Kotlin + Jetpack Compose que consume la API del servidor:
+
+```text
+android/
+```
+
+Ver [android/README.md](android/README.md) para compilar e instalar el APK.
+
 ## Estructura
 
 - `vstarcam/` - Backend Python (API, ONVIF, PTZ, detección, grabación)
 - `web/` - Interfaz web (HTML/CSS/JS)
+- `android/` - App Android nativa (Kotlin + Compose)
 - `data/` - Configuración, grabaciones, capturas, logs
 - `bin/` - Binarios descargados (ffmpeg, go2rtc, rclone)
 

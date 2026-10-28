@@ -5,12 +5,12 @@ __pycache__/
 .Python
 
 # Datos locales
-data/
-logs/
+/data/
+/logs/
 *.log
 
 # Binarios descargados
-bin/
+/bin/
 
 # Configuración local / generados
 config.json
@@ -23,3 +23,15 @@ go2rtc.yaml
 
 # Paquetes .deb descargados
 *.deb
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/captures/
+*.apk
+*.aab
+*.keystore
+*.jks
