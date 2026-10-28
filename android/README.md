@@ -21,9 +21,28 @@ Consume la API REST del servidor `vstarcam` (Python) que ya conoces. **No** habl
 - Servidor vstarcam accesible en la misma red local
 - El móvil y el PC del servidor en la **misma red**
 
+## APK ya compilado
+
+Cada push a `main` que modifique `android/` compila el APK automáticamente con GitHub Actions:
+
+- Descarga directa: [última release](https://github.com/jorgenio/cameraapp/releases/latest) → `cameraapp-debug.apk`
+- O desde la pestaña **Actions** → run más reciente → artefacto `cameraapp-apk`
+
+El APK debug está firmado con clave de debug, así que se instala directamente (puede requerir permitir "orígenes desconocidos").
+
 ## Cómo compilar
 
-### Opción 1: Android Studio (recomendado)
+### Opción 0: script local
+
+```bash
+cd android
+./build_apk.sh           # APK debug
+./build_apk.sh install   # compila e instala por adb
+```
+
+Requiere JDK 17 y Android SDK (platform 34 + build-tools 34.0.0).
+
+### Opción 1: Android Studio
 
 1. Abre Android Studio
 2. `File > Open` y selecciona la carpeta `android/`

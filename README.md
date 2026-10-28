@@ -2,6 +2,8 @@
 
 Visor y control local de cámaras IP VStarcam/PTZ.
 
+[![Android APK](https://github.com/jorgenio/cameraapp/actions/workflows/android.yml/badge.svg)](https://github.com/jorgenio/cameraapp/actions/workflows/android.yml)
+
 Aplicación local para visualizar, controlar PTZ, grabar, detectar movimiento y enviar alertas por Telegram sin depender de la nube del fabricante.
 
 ## Características
@@ -57,7 +59,16 @@ App nativa en Kotlin + Jetpack Compose que consume la API del servidor:
 android/
 ```
 
-Ver [android/README.md](android/README.md) para compilar e instalar el APK.
+**Descargar el APK ya compilado:** [última release](https://github.com/jorgenio/cameraapp/releases/latest) → `cameraapp-debug.apk`.
+
+Compilar en local:
+
+```bash
+cd android
+./build_apk.sh
+```
+
+Ver [android/README.md](android/README.md) para más detalles.
 
 ## Estructura
 
