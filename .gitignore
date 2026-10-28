@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Datos locales
+data/
+logs/
+*.log
+
+# Binarios descargados
+bin/
+
+# Configuración local / generados
+config.json
+go2rtc.yaml
+*.tmp
+
+# IDE
+.vscode/
+.idea/

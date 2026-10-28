@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<title>VStarcam · Panel local</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M4 6.5A2.5 2.5 0 0 1 6.5 4h6A2.5 2.5 0 0 1 15 6.5v1.2l4.2-2.1a1 1 0 0 1 1.45.9v10.9a1 1 0 0 1-1.45.9L15 16.3v1.2A2.5 2.5 0 0 1 12.5 20h-6A2.5 2.5 0 0 1 4 17.5v-11Z"/></svg>
+    </span>
+    <span class="brand-name">VStarcam</span>
+    <span class="brand-tag">local</span>
+  </div>
+
+  <div class="conn" id="conn" title="Estado del servidor">
+    <span class="dot"></span><span class="conn-text">conectando…</span>
+  </div>
+
+  <nav class="actions">
+    <button class="btn ghost" id="btn-scan" title="Buscar cámaras en la red">
+      <svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4 9a12 12 0 0 1 16 0M7 12.5a8 8 0 0 1 10 0M10 16a3.5 3.5 0 0 1 4 0"/><circle cx="12" cy="19" r="1.3" fill="currentColor"/></svg>
+      <span>Escanear</span>
+    </button>
+    <button class="btn ghost" id="btn-recordings" title="Grabaciones">
+      <svg viewBox="0 0 24 24" width="16" height="16"><rect x="3" y="6" width="13" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 10.5 21 8v8l-5-2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      <span>Grabaciones</span>
+    </button>
+    <button class="btn ghost" id="btn-events" title="Eventos">
+      <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9.5 19a2.5 2.5 0 0 0 5 0" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+      <span>Eventos</span>
+      <span class="pill" id="events-count" hidden>0</span>
+    </button>
+    <button class="btn ghost icon-only" id="btn-settings" title="Ajustes">
+      <svg viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2" d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.05A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.05A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6h.09A1.7 1.7 0 0 0 10 3.05V3a2 2 0 1 1 4 0v.05A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9v.09a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.05a1.7 1.7 0 0 0-1.55 1Z"/></svg>
+    </button>
+    <button class="btn primary" id="btn-add">
+      <svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
+      <span>Añadir cámara</span>
+    </button>
+  </nav>
+</header>
+
+<main class="stage">
+  <section id="grid" class="grid" aria-live="polite"></section>
+
+  <section id="empty" class="empty" hidden>
+    <div class="empty-inner">
+      <div class="empty-icon">
+        <svg viewBox="0 0 24 24" width="42" height="42"><path fill="none" stroke="currentColor" stroke-width="1.4" d="M4 7.5A2.5 2.5 0 0 1 6.5 5h6A2.5 2.5 0 0 1 15 7.5v1.4l4-2a1 1 0 0 1 1.4.9v10.4a1 1 0 0 1-1.4.9l-4-2v1.4a2.5 2.5 0 0 1-2.5 2.5h-6A2.5 2.5 0 0 1 4 18.5v-11Z"/></svg>
+      </div>
+      <h2>No hay cámaras todavía</h2>
+      <p>Busca cámaras en tu red o añade una a mano con su dirección IP, usuario y contraseña.</p>
+      <div class="empty-actions">
+        <button class="btn primary" id="empty-scan">Buscar en la red</button>
+        <button class="btn ghost" id="empty-add">Añadir manualmente</button>
+      </div>
+      <details class="help">
+        <summary>¿No aparece tu cámara Eye4 / O-KAM?</summary>
+        <p>Las cámaras VStarcam necesitan que actives ONVIF/RTSP desde la app oficial:</p>
+        <ol>
+          <li>Abre <strong>Eye4</strong> u <strong>O-KAM</strong> y entra en los ajustes de la cámara.</li>
+          <li>Busca <strong>Configuración de red → ONVIF</strong> (o «Protocolo ONVIF/RTSP») y actívalo.</li>
+          <li>Anota el usuario y contraseña de ONVIF (a veces es <code>admin</code> + la clave del dispositivo).</li>
+          <li>Comprueba que el puerto RTSP es <code>554</code> y el ONVIF el <code>80</code> (o <code>8080</code>).</li>
+        </ol>
+        <p>Si tu modelo no ofrece ONVIF, casi siempre expone RTSP en
+          <code>rtsp://usuario:clave@IP:554/onvif1</code>.</p>
+      </details>
+    </div>
+  </section>
+</main>
+
+<aside id="events-drawer" class="drawer" aria-hidden="true">
+  <div class="drawer-head">
+    <h2>Eventos</h2>
+    <div class="drawer-tools">
+      <select id="events-filter" class="select-sm"><option value="">Todas</option></select>
+      <button class="btn ghost icon-only" id="events-close" title="Cerrar">✕</button>
+    </div>
+  </div>
+  <div id="events-list" class="events"></div>
+</aside>
+<div id="drawer-backdrop" class="backdrop" hidden></div>
+
+<div id="modal-root"></div>
+<div id="toasts" class="toasts"></div>
+
+<template id="tile-tpl">
+  <article class="tile" data-id="">
+    <div class="viewport">
+      <video class="stream" muted playsinline autoplay></video>
+      <img class="fallback" alt="" hidden>
+      <div class="placeholder">
+        <svg viewBox="0 0 24 24" width="30" height="30"><path fill="none" stroke="currentColor" stroke-width="1.5" d="M12 3v3m0 12v3M3 12h3m12 0h3"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+        <span class="ph-text">Conectando…</span>
+        <button class="btn ghost tiny retry" hidden>Reintentar</button>
+      </div>
+
+      <div class="badges">
+        <span class="badge live">EN VIVO</span>
+        <span class="badge rec">REC</span>
+        <span class="badge off">SIN SEÑAL</span>
+      </div>
+
+      <div class="unmute" hidden>🔇 Pulsa para oír</div>
+
+      <div class="nameplate">
+        <span class="name"></span>
+        <span class="meta"></span>
+      </div>
+
+      <div class="tools">
+        <button class="tbtn" data-act="audio" title="Activar/desactivar sonido">
+          <svg viewBox="0 0 24 24" width="17" height="17"><path fill="currentColor" d="M4 9.5h3L12 5v14L7 14.5H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1Z"/><path class="wave" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M16 8.5a5 5 0 0 1 0 7M18.7 6a8.5 8.5 0 0 1 0 12"/></svg>
+        </button>
+        <button class="tbtn" data-act="ptz" title="Mover la cámara">
+          <svg viewBox="0 0 24 24" width="17" height="17"><path fill="currentColor" d="M12 2 14 6h-4l2-4Zm0 20-2-4h4l-2 4ZM2 12l4-2v4l-4-2Zm20 0-4 2v-4l4 2Z"/><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        </button>
+        <button class="tbtn" data-act="snapshot" title="Guardar captura">
+          <svg viewBox="0 0 24 24" width="17" height="17"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1L9 4h6l1.5 2h1A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-8Z"/><circle cx="12" cy="12.5" r="3.4" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        </button>
+        <button class="tbtn" data-act="record" title="Grabar">
+          <svg viewBox="0 0 24 24" width="17" height="17"><circle cx="12" cy="12" r="7" fill="currentColor"/></svg>
+        </button>
+        <button class="tbtn" data-act="edit" title="Editar cámara">
+          <svg viewBox="0 0 24 24" width="17" height="17"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M4 20h4L18.5 9.5a1.5 1.5 0 0 0-2-2L6 18v2Z"/><path fill="none" stroke="currentColor" stroke-width="1.8" d="M13.5 6.5 16 4l4 4-2.5 2.5"/></svg>
+        </button>
+        <button class="tbtn" data-act="focus" title="Ampliar">
+          <svg viewBox="0 0 24 24" width="17" height="17"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M8 4H4v4m12-4h4v4M8 20H4v-4m12 4h4v-4"/></svg>
+        </button>
+      </div>
+
+      <div class="ptz" hidden>
+        <div class="dpad">
+          <button data-move="upleft" class="c1">↖</button>
+          <button data-move="up" class="c2">↑</button>
+          <button data-move="upright" class="c3">↗</button>
+          <button data-move="left" class="c4">←</button>
+          <button class="center" data-move="home" title="Posición inicial">⌂</button>
+          <button data-move="right" class="c6">→</button>
+          <button data-move="downleft" class="c7">↙</button>
+          <button data-move="down" class="c8">↓</button>
+          <button data-move="downright" class="c9">↘</button>
+        </div>
+        <div class="zoomer">
+          <button data-move="zoom_in">+</button>
+          <span>zoom</span>
+          <button data-move="zoom_out">−</button>
+        </div>
+        <div class="presets-row">
+          <select class="preset-select"><option value="">— Presets —</option></select>
+          <button class="preset-save" title="Guardar posición actual">+ Guardar</button>
+        </div>
+        <div class="speed-row">
+          <span>velocidad</span>
+          <input type="range" class="speed" min="10" max="100" value="60">
+        </div>
+      </div>
+    </div>
+  </article>
+</template>
+
+<script src="/static/webrtc.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
