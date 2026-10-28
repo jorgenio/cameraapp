@@ -20,3 +20,6 @@ go2rtc.yaml
 # IDE
 .vscode/
 .idea/
+
+# Paquetes .deb descargados
+*.deb
