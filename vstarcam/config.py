@@ -18,6 +18,8 @@ DEFAULT_CAMERA: dict[str, Any] = {
     "password": "",
     "onvif_port": 80,
     "onvif_path": "/onvif/device_service",
+    "ptz_driver": "",  # "" = auto (ONVIF y, si falla, CGI) | "onvif" | "cgi"
+    "cgi_port": 0,     # 0 = deducir (81 en cámaras VStarcam)
     "rtsp_url": "",
     "snapshot_url": "",
     "profile_token": "",

@@ -190,6 +190,29 @@ class CameraManager:
         cam = self.config.camera(cam_id)
         if not cam:
             raise KeyError(cam_id)
+
+        driver = str(cam.get("ptz_driver") or "").strip().lower()
+        if driver == "cgi":
+            return self._ptz_cgi(cam, cam_id, action, duration)
+        if driver == "onvif":
+            return self._ptz_onvif(cam, cam_id, action, speed, duration, preset)
+
+        try:
+            return self._ptz_onvif(cam, cam_id, action, speed, duration, preset)
+        except Exception as exc:  # noqa: BLE001
+            # Muchas VStarcam no exponen PTZ por ONVIF (el servicio de media
+            # responde 404 o se cuelga) y solo aceptan su CGI propietario.
+            try:
+                result = self._ptz_cgi(cam, cam_id, action, duration)
+            except Exception as cgi_exc:  # noqa: BLE001
+                raise onvif.OnvifError(f"ONVIF: {exc}; CGI: {cgi_exc}") from None
+            cam["ptz_driver"] = "cgi"
+            self.config.upsert_camera(cam)
+            logger.info("PTZ de %s usando driver CGI", cam_id)
+            return result
+
+    def _ptz_onvif(self, cam: dict, cam_id: str, action: str, speed: float,
+                   duration: float, preset: str = "") -> dict:
         profile = cam.get("ptz_profile_token") or cam.get("profile_token")
         if not profile:
             client = self.onvif_client(cam, force=True)
@@ -205,11 +228,8 @@ class CameraManager:
 
         if action in ("stop", "halt"):
             self._cancel_auto_stop(cam_id)
-            try:
-                client.ptz_stop(profile)
-            except onvif.OnvifError:
-                discovery.http_ptz(cam["host"], "stop")
-            return {"ok": True, "action": "stop"}
+            client.ptz_stop(profile)
+            return {"ok": True, "action": "stop", "driver": "onvif"}
 
         if action == "home":
             body = (
@@ -218,28 +238,94 @@ class CameraManager:
                 "</tptz:GotoHomePosition>"
             )
             client._ptz("GotoHomePosition", body)
-            return {"ok": True, "action": "home"}
+            return {"ok": True, "action": "home", "driver": "onvif"}
 
         if action == "preset":
             client.ptz_goto_preset(profile, preset)
-            return {"ok": True, "action": "preset", "preset": preset}
+            return {"ok": True, "action": "preset", "preset": preset,
+                    "driver": "onvif"}
 
         vector = MOVE_VECTORS.get(action)
         if not vector:
             raise ValueError(f"Acción PTZ desconocida: {action}")
 
         pan, tilt, zoom = vector
-        try:
-            client.ptz_move(profile, pan * speed, tilt * speed, zoom * speed)
-        except onvif.OnvifError as exc:
-            # Algunas VStarcam solo exponen PTZ por su CGI propietario.
-            if action in MOVE_VECTORS and discovery.http_ptz(cam["host"], action):
-                return {"ok": True, "action": action, "driver": "cgi"}
-            raise onvif.OnvifError(str(exc)) from None
+        client.ptz_move(profile, pan * speed, tilt * speed, zoom * speed)
 
         if duration > 0:
             self._schedule_stop(cam_id, profile, duration)
         return {"ok": True, "action": action, "driver": "onvif"}
+
+    def _ptz_cgi(self, cam: dict, cam_id: str, action: str,
+                 duration: float) -> dict:
+        """PTZ por el CGI propietario (``decoder_control.cgi``)."""
+        host = cam.get("host") or ""
+        try:
+            port = int(cam.get("cgi_port") or 0)
+        except (TypeError, ValueError):
+            port = 0
+        if not port:
+            try:
+                onvif_port = int(cam.get("onvif_port") or 0)
+            except (TypeError, ValueError):
+                onvif_port = 0
+            port = onvif_port if onvif_port in (80, 81, 8080) else 81
+        user = cam.get("username") or ""
+        password = cam.get("password") or ""
+
+        if action in ("stop", "halt"):
+            self._cancel_auto_stop(cam_id)
+            if not discovery.http_ptz_stop(
+                host, "stop", port=port, username=user, password=password,
+            ):
+                raise onvif.OnvifError("la cámara no aceptó el stop por CGI")
+            return {"ok": True, "action": "stop", "driver": "cgi"}
+
+        if action == "home":
+            self._cancel_auto_stop(cam_id)
+            if not discovery.http_ptz(
+                host, "home", port=port, username=user, password=password,
+            ):
+                raise onvif.OnvifError("la cámara no aceptó home por CGI")
+            return {"ok": True, "action": "home", "driver": "cgi"}
+
+        if action == "preset":
+            raise onvif.OnvifError("esta cámara no soporta presets por CGI")
+
+        if action not in discovery.CGI_PTZ_COMMANDS:
+            raise onvif.OnvifError(
+                f"la cámara no soporta la acción PTZ '{action}' por CGI"
+            )
+
+        if not discovery.http_ptz(
+            host, action, port=port, username=user, password=password,
+            onestep=duration <= 0,
+        ):
+            raise onvif.OnvifError(f"PTZ CGI rechazado por {host}:{port}")
+
+        if duration > 0:
+            self._schedule_cgi_stop(
+                cam_id, host, port, user, password, action, duration,
+            )
+        return {"ok": True, "action": action, "driver": "cgi"}
+
+    def _schedule_cgi_stop(self, cam_id: str, host: str, port: int,
+                           user: str, password: str, action: str,
+                           duration: float) -> None:
+        self._cancel_auto_stop(cam_id)
+
+        def _stop() -> None:
+            try:
+                discovery.http_ptz_stop(
+                    host, action, port=port, username=user, password=password,
+                )
+            finally:
+                self._auto_stops.pop(cam_id, None)
+
+        timer = threading.Timer(duration, _stop)
+        timer.daemon = True
+        self._auto_stops[cam_id] = timer
+        timer.start()
 
     def _schedule_stop(self, cam_id: str, profile: str, duration: float) -> None:
         self._cancel_auto_stop(cam_id)
@@ -251,7 +337,10 @@ class CameraManager:
             try:
                 self.onvif_client(cam).ptz_stop(profile)
             except Exception:  # noqa: BLE001
-                discovery.http_ptz(cam["host"], "stop")
+                try:
+                    self._ptz_cgi(cam, cam_id, "stop", 0)
+                except Exception:  # noqa: BLE001
+                    logger.warning("No se pudo detener el PTZ de %s", cam_id)
             self._auto_stops.pop(cam_id, None)
 
         timer = threading.Timer(duration, _stop)

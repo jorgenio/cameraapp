@@ -70,6 +70,29 @@ cd android
 
 Ver [android/README.md](android/README.md) para más detalles.
 
+## PTZ
+
+El backend usa **ONVIF** y, si la cámara no lo soporta correctamente, cae
+automáticamente al **CGI propietario de VStarcam** (`decoder_control.cgi`).
+Para forzar un driver concreto, añade a la cámara en `config.json`:
+
+```json
+{
+  "id": "tres",
+  "host": "192.168.1.2",
+  "username": "admin",
+  "password": "...",
+  "ptz_driver": "cgi",
+  "cgi_port": 81
+}
+```
+
+- `ptz_driver`: `"cgi"`, `"onvif"` o vacío para automático.
+- `cgi_port`: puerto del panel web de la cámara (81 en VStarcam).
+
+> Algunos modelos VStarcam no soportan zoom ni presets por CGI; en ese caso el
+> movimiento (arriba/abajo/izquierda/derecha, diagonales y `home`) sí funciona.
+
 ## Estructura
 
 - `vstarcam/` - Backend Python (API, ONVIF, PTZ, detección, grabación)

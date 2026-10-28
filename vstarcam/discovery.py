@@ -5,6 +5,7 @@ from __future__ import annotations
 import concurrent.futures
 import ipaddress
 import logging
+import re
 import socket
 import time
 import urllib.parse
@@ -223,21 +224,83 @@ def guess_rtsp(ip: str, username: str = "admin", password: str = "",
     return None
 
 
-def http_ptz(ip: str, action: str, port: int = 81, speed: int = 45) -> bool:
-    """Fallback PTZ del protocolo CGI de VStarcam (puerto 81 por defecto)."""
+# Comandos del CGI propietario de VStarcam (decoder_control.cgi), extraídos
+# del propio panel web de la cámara (monitor.htm):
+#   0 arriba, 1 stop, 2 abajo, 3 stop abajo, 4 izquierda, 5 stop izquierda,
+#   6 derecha, 7 stop derecha, 25 centrar, 90-93 diagonales.
+CGI_PTZ_COMMANDS = {
+    "up": 0,
+    "down": 2,
+    "left": 4,
+    "right": 6,
+    "upleft": 90,
+    "upright": 91,
+    "downleft": 92,
+    "downright": 93,
+    "home": 25,
+    "center": 25,
+    "stop": 1,
+}
+
+# Stop concreto de cada dirección (algunos firmwares ignoran el stop genérico).
+CGI_PTZ_STOPS = {
+    "up": 1,
+    "down": 3,
+    "left": 5,
+    "right": 7,
+}
+
+
+def http_ptz(
+    ip: str,
+    action: str,
+    port: int = 81,
+    username: str = "",
+    password: str = "",
+    onestep: bool = False,
+    timeout: float = 3.0,
+    command: int | None = None,
+) -> bool:
+    """PTZ por el CGI propietario de VStarcam (``decoder_control.cgi``).
+
+    La cámara exige las credenciales como parámetros ``loginuse``/``loginpas``;
+    la autenticación básica por sí sola no basta. ``onestep=False`` mantiene el
+    movimiento hasta que se envía ``stop`` (lo que hace el backend tras
+    ``duration``).
+    """
+    import base64
     import urllib.request
 
-    acts = {
-        "up": "up", "down": "down", "left": "left", "right": "right",
-        "stop": "stop", "home": "home", "zoom_in": "zoomin", "zoom_out": "zoomout",
-    }
-    act = acts.get(action)
-    if not act:
+    if command is None:
+        command = CGI_PTZ_COMMANDS.get(action)
+    if command is None:
         return False
-    url = f"http://{ip}:{port}/cgi-bin/hi3510/ptzctrl.cgi?-step={0 if action == 'stop' else 1}&-act={act}&-speed={speed}"
+
+    query = urllib.parse.urlencode({
+        "loginuse": username,
+        "loginpas": password,
+        "command": command,
+        "onestep": 1 if onestep else 0,
+    })
+    url = f"http://{ip}:{port}/decoder_control.cgi?{query}"
+    request = urllib.request.Request(url, headers={"User-Agent": "vstarcam"})
+    if username or password:
+        # Algunos firmwares también piden autenticación básica.
+        token = base64.b64encode(f"{username}:{password}".encode()).decode()
+        request.add_header("Authorization", f"Basic {token}")
     try:
-        with urllib.request.urlopen(url, timeout=3) as resp:
-            resp.read(64)
-        return True
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
+            body = resp.read(256).decode("latin-1", "replace")
     except Exception:  # noqa: BLE001
         return False
+    # Respuesta correcta: var result="ok";
+    return bool(re.search(r"result\s*=\s*[\"']?ok", body, re.IGNORECASE))
+
+
+def http_ptz_stop(ip: str, action: str = "stop", port: int = 81,
+                  username: str = "", password: str = "") -> bool:
+    """Envía el stop adecuado para una dirección (o el genérico)."""
+    return http_ptz(
+        ip, "stop", port=port, username=username, password=password,
+        command=CGI_PTZ_STOPS.get(action, 1),
+    )
