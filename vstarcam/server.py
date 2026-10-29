@@ -195,6 +195,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/status" and method == "GET":
             return self.send_json(mgr.status())
 
+        if path == "/api/analytics" and method == "GET":
+            return self.send_json(mgr.analytics.status())
+
         if path == "/api/cameras":
             if method == "GET":
                 cams = mgr.config.cameras()
@@ -237,6 +240,15 @@ class Handler(BaseHTTPRequestHandler):
         m = re.fullmatch(r"/api/cameras/([^/]+)/test", path)
         if m and method == "POST":
             return self._test_camera(m.group(1))
+
+        m = re.fullmatch(r"/api/cameras/([^/]+)/detect", path)
+        if m and method == "POST":
+            try:
+                return self.send_json(mgr.detect_objects(m.group(1)))
+            except KeyError:
+                return self.error(404, "Cámara no existe")
+            except Exception as exc:  # noqa: BLE001
+                return self.error(502, f"Detección: {exc}")
 
         m = re.fullmatch(r"/api/cameras/([^/]+)/snapshot\.jpg", path)
         if m and method == "GET":

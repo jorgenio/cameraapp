@@ -44,6 +44,7 @@ else:
     DATA = ROOT / "data"
 SNAPSHOTS = DATA / "snapshots"
 RECORDINGS = DATA / "recordings"
+MODELS = DATA / "models"
 CONFIG_PATH = DATA / "config.json" if getattr(sys, "frozen", False) else ROOT / "config.json"
 LOG_DIR = DATA / "logs"
 
@@ -65,7 +66,7 @@ def setup_logging(level: int = logging.INFO) -> None:
 
 
 def ensure_dirs() -> None:
-    for d in (BIN, DATA, SNAPSHOTS, RECORDINGS, LOG_DIR, WEB):
+    for d in (BIN, DATA, SNAPSHOTS, RECORDINGS, MODELS, LOG_DIR, WEB):
         d.mkdir(parents=True, exist_ok=True)
 
 

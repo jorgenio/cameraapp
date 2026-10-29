@@ -235,6 +235,16 @@
   }
 
   /* ----------------------------------------------------------------- tiles */
+  // Cámaras cuyo PTZ solo funciona por el CGI propietario (sin zoom/presets).
+  function applyPtzCaps(t) {
+    const cgi = String(t.cam.ptz_driver || "").toLowerCase() === "cgi";
+    t.ptz.classList.toggle("simple", cgi);
+    const zoomer = $(".zoomer", t.el);
+    const presets = $(".presets-row", t.el);
+    if (zoomer) zoomer.hidden = cgi;
+    if (presets) presets.hidden = cgi;
+  }
+
   function makeTile(cam) {
     const node = tpl.content.firstElementChild.cloneNode(true);
     const t = {
@@ -255,6 +265,7 @@
     node.dataset.id = cam.id;
     $(".name", node).textContent = cam.name;
     $(".meta", node).textContent = cam.host || "";
+    applyPtzCaps(t);
     t.video.muted = !state.sound;
 
     // Herramientas
@@ -268,7 +279,7 @@
           const show = t.ptz.hidden;
           t.ptz.hidden = !show;
           btn.classList.toggle("on", show);
-          if (show) loadPresets(t);
+          if (show && !t.ptz.classList.contains("simple")) loadPresets(t);
         } else if (act === "snapshot") {
           takeSnapshot(t);
         } else if (act === "record") {
@@ -411,6 +422,7 @@
         t.cam = cam;
         $(".name", t.el).textContent = cam.name;
         $(".meta", t.el).textContent = cam.host || "";
+        applyPtzCaps(t);
         if (oldUrl !== cam.rtsp_url) {
           t.el.querySelector(".preset-select").dataset.loaded = "";
           startStream(t);
@@ -462,6 +474,24 @@
   }
 
   /* --------------------------------------------------------------- eventos */
+  const CATEGORY_LABELS = {
+    persona: "Persona", vehiculo: "Vehículo", animal: "Animal",
+    objeto: "Objeto", movimiento: "Movimiento", snapshot: "Captura",
+  };
+
+  function eventCategory(e) {
+    const cat = e.meta && e.meta.category;
+    if (cat) return cat;
+    return e.type === "snapshot" ? "snapshot" : "movimiento";
+  }
+
+  function fmtDuration(e) {
+    const s = Number(e.meta && e.meta.duration);
+    if (!s || s < 1) return "";
+    if (s < 60) return Math.round(s) + " s";
+    return Math.floor(s / 60) + " min " + Math.round(s % 60) + " s";
+  }
+
   async function refreshEvents() {
     let events = [];
     try {
@@ -480,7 +510,11 @@
 
     if (!state.eventsOpen) return;
     const camFilter = $("#events-filter").value;
-    const list = events.filter((e) => !camFilter || e.camera_id === camFilter);
+    const kindFilter = $("#events-kind").value;
+    const list = events.filter((e) =>
+      (!camFilter || e.camera_id === camFilter) &&
+      (!kindFilter || eventCategory(e) === kindFilter)
+    );
     const box = $("#events-list");
     if (!list.length) {
       box.innerHTML = '<div class="events-empty">Sin eventos todavía.<br>Activa la detección de movimiento en una cámara.</div>';
@@ -492,10 +526,18 @@
       const img = e.snapshot_url
         ? `<img src="${esc(e.snapshot_url)}" alt="" loading="lazy">`
         : '<div class="noimg">sin foto</div>';
+      const kind = eventCategory(e);
+      const kindLabel = CATEGORY_LABELS[kind] || e.type;
+      const desc = e.description || e.message || "";
+      const details = [fmtTime(e.ts), fmtAgo(e.ts), fmtDuration(e)].filter(Boolean).join(" · ");
       return `<div class="event" data-snap="${esc(e.snapshot_url || "")}" data-clip="${esc(e.clip_url || "")}">
         ${img}
-        <div><div class="title">${esc(title)}</div><div class="sub">${esc(fmtTime(e.ts))} · ${esc(fmtAgo(e.ts))}</div></div>
-        <span class="kind ${esc(e.type)}">${esc(e.type)}</span>
+        <div class="body">
+          <div class="title">${esc(title)}</div>
+          ${desc ? `<div class="desc">${esc(desc)}</div>` : ""}
+          <div class="sub">${esc(details)}</div>
+        </div>
+        <span class="kind ${esc(kind)}">${esc(kindLabel)}</span>
       </div>`;
     }).join("");
 
@@ -1247,6 +1289,7 @@
   $("#events-close").onclick = closeEvents;
   $("#drawer-backdrop").onclick = closeEvents;
   $("#events-filter").onchange = refreshEvents;
+  $("#events-kind").onchange = refreshEvents;
 
   document.addEventListener("keydown", (ev) => {
     if (ev.target.matches("input, textarea, select")) return;
@@ -1256,6 +1299,7 @@
                   "+": "zoom_in", "-": "zoom_out" };
     const action = map[ev.key];
     if (!action) return;
+    if (action.startsWith("zoom_") && t.ptz.classList.contains("simple")) return;
     ev.preventDefault();
     state.keyHeld = state.keyHeld || {};
     if (state.keyHeld[action]) return; // ignora la repetición del teclado

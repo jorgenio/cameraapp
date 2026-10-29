@@ -53,10 +53,15 @@ fun PlayerScreen(cameraId: String, cameraName: String, onBack: () -> Unit) {
     var manager by remember { mutableStateOf<WebRTCManager?>(null) }
     var backendMessage by remember { mutableStateOf("") }
     var cookie by remember { mutableStateOf("") }
+    var canZoom by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
         ApiClient.init(context)
         cookie = prefs.sessionCookie.first()
+
+        // Capacidades PTZ: con driver CGI la cámara no admite zoom.
+        runCatching { ApiClient.service().getCamera(cameraId) }
+            .onSuccess { canZoom = !it.camera.ptz_driver.equals("cgi", ignoreCase = true) }
 
         val mgr = WebRTCManager(context, ApiClient.baseUrl(), cookie)
         manager = mgr
@@ -169,14 +174,16 @@ fun PlayerScreen(cameraId: String, cameraName: String, onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedButton(
-                    onClick = { scope.launch { ptz(cameraId, "zoom_in") } },
-                    modifier = Modifier.weight(1f)
-                ) { Text("Zoom +") }
-                OutlinedButton(
-                    onClick = { scope.launch { ptz(cameraId, "zoom_out") } },
-                    modifier = Modifier.weight(1f)
-                ) { Text("Zoom −") }
+                if (canZoom) {
+                    OutlinedButton(
+                        onClick = { scope.launch { ptz(cameraId, "zoom_in") } },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Zoom +") }
+                    OutlinedButton(
+                        onClick = { scope.launch { ptz(cameraId, "zoom_out") } },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Zoom −") }
+                }
                 Button(
                     onClick = {
                         scope.launch {

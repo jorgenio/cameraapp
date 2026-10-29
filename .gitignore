@@ -17,6 +17,9 @@ config.json
 go2rtc.yaml
 *.tmp
 
+# Entorno virtual con dependencias opcionales de análisis
+/.venv/
+
 # IDE
 .vscode/
 .idea/

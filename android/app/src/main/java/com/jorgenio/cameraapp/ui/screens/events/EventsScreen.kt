@@ -167,18 +167,29 @@ fun EventsScreen(onBack: () -> Unit) {
                                 }
                                 Spacer(Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            ev.camera_id,
+                                            color = TextPrimary,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        CategoryBadge(ev)
+                                    }
+                                    val desc = ev.description.ifBlank { ev.message }
+                                    if (desc.isNotBlank()) {
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            desc,
+                                            color = TextPrimary,
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
                                     Text(
-                                        ev.camera_id,
-                                        color = TextPrimary,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text(
-                                        ev.type,
-                                        color = TextSecondary,
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                    Text(
-                                        formatTs(ev.ts),
+                                        listOfNotNull(
+                                            formatTs(ev.ts),
+                                            formatDuration(ev.meta?.duration)
+                                        ).joinToString(" · "),
                                         color = TextSecondary,
                                         style = MaterialTheme.typography.bodySmall
                                     )
@@ -212,4 +223,40 @@ private fun formatTs(ts: Double): String {
     val millis = (ts * 1000).toLong()
     val fmt = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
     return fmt.format(Date(millis))
+}
+
+private fun eventCategory(ev: Event): String {
+    val cat = ev.meta?.category
+    if (!cat.isNullOrBlank()) return cat
+    return if (ev.type == "snapshot") "snapshot" else "movimiento"
+}
+
+private fun formatDuration(seconds: Double?): String? {
+    val s = seconds ?: return null
+    if (s < 1) return null
+    return if (s < 60) "${s.toInt()} s"
+    else "${(s / 60).toInt()} min ${(s % 60).toInt()} s"
+}
+
+@Composable
+private fun CategoryBadge(ev: Event) {
+    val kind = eventCategory(ev)
+    val (label, color) = when (kind) {
+        "persona" -> "Persona" to Color(0xFFFDA4AF)
+        "vehiculo" -> "Vehículo" to Color(0xFF93C5FD)
+        "animal" -> "Animal" to Success
+        "objeto" -> "Objeto" to Color(0xFFC4B5FD)
+        "snapshot" -> "Captura" to Color(0xFF67E8F9)
+        else -> "Movimiento" to Color(0xFFFBBF24)
+    }
+    Text(
+        label,
+        color = color,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier
+            .clip(RoundedCornerShape(5.dp))
+            .background(color.copy(alpha = 0.15f))
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+    )
 }

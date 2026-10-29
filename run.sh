@@ -22,4 +22,10 @@ fi
 
 mkdir -p data
 
-exec python3 -m vstarcam "$@"
+# Si existe el entorno con dependencias de análisis, se usa automáticamente.
+PYTHON="python3"
+if [[ -x .venv/bin/python ]]; then
+  PYTHON=".venv/bin/python"
+fi
+
+exec "$PYTHON" -m vstarcam "$@"

@@ -1,0 +1,10 @@
+# Dependencias OPCIONALES para el análisis de eventos.
+#
+# Con ellas, cada evento de movimiento se analiza en local (sin nube) para
+# etiquetar personas, vehículos y animales en la descripción.
+# Si no están instaladas, la aplicación funciona igual: los eventos solo
+# llevan la descripción básica de movimiento, zona y duración.
+#
+# Instalación:  ./setup_analytics.sh
+numpy>=1.24
+onnxruntime>=1.16

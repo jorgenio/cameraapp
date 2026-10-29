@@ -15,7 +15,13 @@ data class Camera(
     val rtsp_url: String? = null,
     val audio: Boolean? = null,
     val motion: Motion? = null,
-    val record: Record? = null
+    val record: Record? = null,
+    val ptz_driver: String? = null
+)
+
+data class CameraRes(
+    val ok: Boolean = true,
+    val camera: Camera
 )
 
 data class Motion(
@@ -42,8 +48,25 @@ data class Event(
     val message: String = "",
     val snapshot: String = "",
     val clip: String = "",
+    val description: String = "",
+    val labels: List<EventLabel>? = null,
+    val meta: EventMeta? = null,
     var snapshot_url: String = "",
     var clip_url: String = ""
+)
+
+data class EventLabel(
+    val `class`: String? = null,
+    val label: String? = null,
+    val score: Double? = null,
+    val box: List<Double>? = null
+)
+
+data class EventMeta(
+    val zone: String? = null,
+    val score: Double? = null,
+    val duration: Double? = null,
+    val category: String? = null
 )
 
 data class EventsRes(

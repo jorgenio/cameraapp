@@ -13,8 +13,10 @@ Aplicación local para visualizar, controlar PTZ, grabar, detectar movimiento y 
 - **Múltiples cámaras**: Cuadrícula con todas las cámaras a la vez
 - **Grabación**: Continua por segmentos o solo por movimiento
 - **Detección de movimiento**: Sin dependencias, eficiente
+- **Descripción de eventos**: Zona, duración e intensidad del movimiento
+- **Detección de objetos (opcional)**: Personas, vehículos y animales en local, sin nube
 - **Capturas**: Guardado automático y manual
-- **Eventos**: Historial con galería y navegación
+- **Eventos**: Historial con descripción, filtros por tipo y galería
 - **Alertas**: Telegram, ntfy, webhook
 - **Subida a nube**: WebDAV / rclone (MEGA, FTP, S3, etc.)
 - **Escaneo ONVIF**: Descubrimiento automático en red local
@@ -39,6 +41,39 @@ cd cameraapp
 ```
 
 Abre [http://127.0.0.1:8080](http://127.0.0.1:8080) en tu navegador.
+
+#### Detección de objetos (opcional)
+
+Los eventos se pueden analizar en local para describir **qué** aparece
+(personas, coches, motos, perros, gatos…), sin enviar imágenes a ninguna nube.
+Son dependencias opcionales: si no las instalas, todo funciona igual con
+descripciones básicas de movimiento, zona y duración.
+
+```bash
+./setup_analytics.sh   # crea .venv e instala numpy + onnxruntime
+./run.sh               # detecta .venv y lo usa automáticamente
+```
+
+La primera vez se descarga el modelo SSD MobileNet v1 (~28 MB, Apache-2.0) en
+`data/models/`. La detección se ejecuta solo sobre la captura del evento, así
+que el consumo es mínimo. Con poca luz o visión nocturna la precisión baja:
+el modelo está pensado para imágenes con iluminación normal.
+
+Ajustes en `config.json`:
+
+```json
+"analytics": {
+  "enabled": true,
+  "auto_download": true,
+  "min_confidence": 0.45,
+  "max_objects": 6
+}
+```
+
+Para desactivarla en una cámara concreta: `"analytics": { "objects": false }`.
+
+Desde la web puedes comprobar el estado en `GET /api/analytics` y probar una
+captura con `POST /api/cameras/<id>/detect`.
 
 ### Windows
 
@@ -104,3 +139,6 @@ Para forzar un driver concreto, añade a la cámara en `config.json`:
 ## Licencia
 
 MIT License. Ver [LICENSE](LICENSE).
+
+El modelo opcional de detección (SSD MobileNet v1) procede del
+[ONNX Model Zoo](https://github.com/onnx/models) y tiene licencia Apache-2.0.

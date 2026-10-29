@@ -10,8 +10,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from . import analytics as analytics_mod
 from . import discovery, ffmpeg, onvif
 from .alerts import Alerter
+from .analytics import Analytics
 from .cloud import CloudUploader
 from .config import Config
 from .db import DB
@@ -44,6 +46,7 @@ class CameraManager:
         self.go2rtc = go2rtc
         self.cloud = cloud
         self.alerter = alerter
+        self.analytics = Analytics(config)
 
         self._onvif: dict[str, onvif.OnvifClient] = {}
         self._onvif_lock = threading.Lock()
@@ -62,6 +65,7 @@ class CameraManager:
     # ------------------------------------------------------------- lifecycle
     def start(self) -> None:
         self.last_streams = self.go2rtc.streams()
+        self.analytics.start()
         for cam in self.config.cameras(only_enabled=True):
             self._alert_throttle[cam["id"]] = Throttle(15)
             if cam.get("motion", {}).get("enabled") and cam.get("rtsp_url"):
@@ -85,6 +89,7 @@ class CameraManager:
 
     def apply_changes(self) -> None:
         """Tras editar cámaras: reinicia detectores/grabadores y go2rtc si cambió algo."""
+        self.analytics.start()
         streaming = self.go2rtc.streams()
         if streaming != self.last_streams:
             previous = self.last_streams
@@ -149,7 +154,7 @@ class CameraManager:
         with self._lock:
             det = self._detectors.get(cam["id"])
             if det is None:
-                det = MotionDetector(cam, self._on_motion)
+                det = MotionDetector(cam, self._on_motion, self._on_motion_end)
                 self._detectors[cam["id"]] = det
             det.cam = cam
             return det
@@ -444,6 +449,22 @@ class CameraManager:
         finally:
             tmp.unlink(missing_ok=True)
 
+    def detect_objects(self, cam_id: str) -> dict:
+        """Analiza una captura actual (para probar la detección desde la UI)."""
+        cam = self.config.camera(cam_id)
+        if not cam:
+            raise KeyError(cam_id)
+        jpeg = self.snapshot(cam_id, fresh=True)
+        detections = self.analytics.detect(
+            jpeg, (cam.get("analytics") or {}).get("min_confidence")
+        )
+        return {
+            "ok": True,
+            "detections": detections,
+            "description": analytics_mod.build_description(detections),
+            "status": self.analytics.status(),
+        }
+
     def save_snapshot_file(self, cam_id: str, fresh: bool = True) -> Path:
         data = self.snapshot(cam_id, fresh=fresh)
         day = time.strftime("%Y-%m-%d")
@@ -521,50 +542,109 @@ class CameraManager:
             return False
 
     # --------------------------------------------------------------- eventos
-    def _on_motion(self, cam: dict, score: float) -> None:
-        self._pool.submit(self._handle_motion, cam, score)
+    def _on_motion(self, cam: dict, score: float,
+                   info: dict | None = None) -> int | None:
+        """Crea el evento al instante; el análisis sigue en segundo plano."""
+        event_id = None
+        try:
+            event_id = self.db.add_event(
+                cam["id"], "motion", "Movimiento detectado"
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("No se pudo crear el evento de %s", cam["id"])
+        self._pool.submit(self._handle_motion, cam, score, info or {}, event_id)
+        return event_id
 
-    def _handle_motion(self, cam: dict, score: float) -> None:
+    def _on_motion_end(self, cam: dict, event_id: int,
+                       info: dict | None = None) -> None:
+        duration = float((info or {}).get("duration") or 0)
+        if not event_id or duration < 1.0:
+            return
+        try:
+            self.db.update_event(
+                event_id, merge_meta={"duration": round(duration, 1)}
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("No se pudo anotar la duración del evento %s", event_id)
+
+    def _handle_motion(self, cam: dict, score: float, info: dict,
+                       event_id: int | None) -> None:
         cam_id = cam["id"]
         day = time.strftime("%Y-%m-%d")
         folder = SNAPSHOTS / cam_id / day
         folder.mkdir(parents=True, exist_ok=True)
         snap_path = folder / f"{cam_id}_{time.strftime('%Y%m%d_%H%M%S')}.jpg"
         snap_ok = False
+        snap_bytes = None
         try:
-            snap_path.write_bytes(self.snapshot(cam_id, fresh=True))
+            snap_bytes = self.snapshot(cam_id, fresh=True)
+            snap_path.write_bytes(snap_bytes)
             snap_ok = True
         except Exception as exc:  # noqa: BLE001
             logger.warning("Sin captura para evento de %s: %s", cam_id, exc)
 
-        clip_path = None
-        if cam.get("record", {}).get("mode") == "motion":
-            clip_path = self._recorder(cam).clip(int(cam["record"].get("clip_seconds", 15)), "motion")
+        zone = analytics_mod.zone_from_bbox(info.get("bbox"))
+        detections: list[dict] = []
+        cam_cfg = cam.get("analytics") or {}
+        if snap_bytes and cam_cfg.get("objects", True) and self.analytics.enabled():
+            try:
+                detections = self.analytics.detect(
+                    snap_bytes, cam_cfg.get("min_confidence")
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("Fallo al analizar la captura de %s", cam_id)
 
-        message = f"Movimiento detectado ({score:.1f}%)"
-        self.db.add_event(
-            cam_id,
-            "motion",
-            message,
-            str(snap_path) if snap_ok else "",
-            str(clip_path) if clip_path else "",
+        description = analytics_mod.build_description(
+            detections, zone=zone, motion_score=score
         )
-        logger.info("%s: %s", cam_id, message)
+        meta = {
+            "zone": zone,
+            "bbox": info.get("bbox"),
+            "score": round(score, 2),
+            "category": analytics_mod.event_category(detections),
+        }
+        try:
+            if event_id:
+                self.db.update_event(
+                    event_id, message=description, description=description,
+                    labels=detections, merge_meta=meta,
+                    snapshot=str(snap_path) if snap_ok else "",
+                )
+            else:
+                event_id = self.db.add_event(
+                    cam_id, "motion", description,
+                    snapshot=str(snap_path) if snap_ok else "",
+                    description=description, labels=detections, meta=meta,
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("No se pudo guardar la descripción del evento de %s", cam_id)
+        logger.info("%s: %s", cam_id, description)
 
         if snap_ok:
             self.cloud.enqueue(snap_path, "snapshot")
-        if clip_path:
-            self.cloud.enqueue(clip_path, "recording")
 
+        # El aviso sale antes del clip: grabar 15 s no debe retrasar la alerta.
         throttle = self._alert_throttle.setdefault(cam_id, Throttle(15))
         if self.alerter.enabled() and throttle.ready():
             image = snap_path if snap_ok else None
             self._pool.submit(
                 self.alerter.send,
                 f"{cam.get('name', cam_id)}",
-                message,
+                description,
                 image,
             )
+
+        if cam.get("record", {}).get("mode") == "motion":
+            clip_path = self._recorder(cam).clip(
+                int(cam["record"].get("clip_seconds", 15)), "motion"
+            )
+            if clip_path:
+                self.cloud.enqueue(clip_path, "recording")
+                if event_id:
+                    try:
+                        self.db.update_event(event_id, clip=str(clip_path))
+                    except Exception:  # noqa: BLE001
+                        logger.exception("No se pudo guardar el clip del evento %s", event_id)
 
     # ------------------------------------------------------------- limpieza
     def _cleanup_loop(self) -> None:
@@ -642,6 +722,7 @@ class CameraManager:
             )
         return {
             "cameras": cams,
+            "analytics": self.analytics.status(),
             "go2rtc": {
                 "enabled": self.go2rtc.enabled(),
                 "installed": self.go2rtc.available,

@@ -1,7 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
 import sys
-from PyInstaller.utils.hooks import collect_submodules
+
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 block_cipher = None
 
@@ -9,14 +10,22 @@ block_cipher = None
 hidden = collect_submodules('vstarcam')
 hidden += ['webbrowser', 'json', 'logging', 'threading', 'http.server']
 
+# Detección de objetos opcional: si numpy/onnxruntime están instalados al
+# compilar, se incluyen en el ejecutable. Si no, el .exe funciona sin ellos.
+try:
+    ort_datas, ort_binaries, ort_hidden = collect_all('onnxruntime')
+except Exception:
+    ort_datas, ort_binaries, ort_hidden = [], [], []
+hidden += ort_hidden
+
 a = Analysis(
     ['vstarcam/__main__.py'],
     pathex=['.'],
-    binaries=[],
+    binaries=ort_binaries,
     datas=[
         ('web', 'web'),
         ('bin', 'bin'),
-    ],
+    ] + ort_datas,
     hiddenimports=hidden,
     hookspath=[],
     hooksconfig={},

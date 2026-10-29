@@ -36,6 +36,10 @@ DEFAULT_CAMERA: dict[str, Any] = {
         "segment_seconds": 300,
         "clip_seconds": 15,
     },
+    "analytics": {
+        "objects": True,       # etiquetar personas/objetos (si hay numpy+onnxruntime)
+        "min_confidence": 0.45,
+    },
 }
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -68,6 +72,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "ntfy": {"enabled": False, "url": "https://ntfy.sh", "topic": ""},
         "telegram": {"enabled": False, "token": "", "chat_id": ""},
         "webhook": "",
+    },
+    "analytics": {
+        "enabled": True,
+        "model": "",             # ruta alternativa al .onnx (vacío = data/models)
+        "auto_download": True,   # descarga el modelo la primera vez
+        "min_confidence": 0.45,
+        "max_objects": 6,
     },
     "cameras": [],
 }

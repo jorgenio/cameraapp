@@ -85,6 +85,22 @@ dist\vstarcam\
 └── ...
 ```
 
+### Detección de objetos en el .exe (opcional)
+
+Si quieres que el ejecutable describa **qué** aparece en cada evento (personas,
+coches, animales…), instala las dependencias opcionales con el mismo Python
+que compila, antes de ejecutar `build_windows.bat`:
+
+```bat
+pip install -r requirements-analytics.txt
+build_windows.bat
+```
+
+PyInstaller las incluirá en el ejecutable. El modelo (~28 MB) se descarga la
+primera vez que arranca en `dist\vstarcam\data\models\`. Si compilas sin estas
+dependencias el .exe funciona igual, con descripciones básicas de movimiento,
+zona y duración.
+
 ## 5) Ejecutar CameraApp
 
 Tienes dos opciones:

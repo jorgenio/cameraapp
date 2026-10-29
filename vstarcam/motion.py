@@ -16,6 +16,7 @@ WIDTH = 160
 HEIGHT = 90
 FRAME_BYTES = WIDTH * HEIGHT
 PIXEL_DELTA = 22  # diferencia mínima por píxel para contar como cambio
+QUIET_SECONDS = 1.5  # sin movimiento este tiempo → se cierra el episodio
 
 
 def _read_exact(stream, n: int) -> bytes | None:
@@ -34,9 +35,10 @@ def _read_exact(stream, n: int) -> bytes | None:
 class MotionDetector:
     """Un hilo por cámara. Llama a `on_event(cam, score)` cuando hay movimiento."""
 
-    def __init__(self, cam: dict, on_event) -> None:
+    def __init__(self, cam: dict, on_event, on_end=None) -> None:
         self.cam = cam
         self.on_event = on_event
+        self.on_end = on_end
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.proc: subprocess.Popen | None = None
@@ -112,21 +114,62 @@ class MotionDetector:
             ).start()
 
             previous: bytes | None = None
+            active = False
+            episode_start = 0.0
+            last_active = 0.0
+            peak = 0.0
+            bbox = None
+            frames = 0
+            event_id = None
             while not self._stop.is_set():
                 frame = _read_exact(self.proc.stdout, FRAME_BYTES)
                 if frame is None:
                     break
                 self._last_frame = time.monotonic()
                 if previous is not None:
-                    score = self._diff(previous, frame)
+                    score, changed = self._diff(previous, frame)
                     self.last_score = score
                     now = time.time()
-                    if score >= threshold and now - self.last_event >= cooldown:
-                        self.last_event = now
-                        try:
-                            self.on_event(self.cam, score)
-                        except Exception:  # noqa: BLE001
-                            logger.exception("Error en callback de movimiento")
+                    if score >= threshold:
+                        frames += 1
+                        if not active:
+                            active = True
+                            episode_start = now
+                            peak = score
+                            bbox = changed
+                            event_id = None
+                            if now - self.last_event >= cooldown:
+                                self.last_event = now
+                                try:
+                                    event_id = self.on_event(
+                                        self.cam, score,
+                                        {"bbox": bbox, "duration": 0.0},
+                                    )
+                                except Exception:  # noqa: BLE001
+                                    logger.exception("Error en callback de movimiento")
+                        else:
+                            peak = max(peak, score)
+                            bbox = _union(bbox, changed)
+                        last_active = now
+                    elif active and now - last_active >= QUIET_SECONDS:
+                        duration = max(0.0, last_active - episode_start)
+                        if event_id and self.on_end:
+                            try:
+                                self.on_end(
+                                    self.cam, event_id,
+                                    {
+                                        "duration": duration,
+                                        "peak": peak,
+                                        "bbox": bbox,
+                                        "frames": frames,
+                                    },
+                                )
+                            except Exception:  # noqa: BLE001
+                                logger.exception("Error al cerrar evento de movimiento")
+                        active = False
+                        event_id = None
+                        bbox = None
+                        frames = 0
                 previous = frame
             if self.proc and self.proc.poll() is None:
                 self.proc.kill()
@@ -151,13 +194,43 @@ class MotionDetector:
                 return
 
     @staticmethod
-    def _diff(a: bytes, b: bytes) -> float:
-        """Porcentaje de píxeles que han cambiado de forma apreciable."""
+    def _diff(a: bytes, b: bytes) -> tuple[float, list[float] | None]:
+        """Porcentaje de píxeles cambiados y caja que los engloba (0..1)."""
         changed = 0
+        x0, y0, x1, y1 = WIDTH, HEIGHT, 0, 0
         aa = array("B", a)
         bb = array("B", b)
-        for x, y in zip(aa, bb):
+        for i, (x, y) in enumerate(zip(aa, bb)):
             d = x - y
             if d > PIXEL_DELTA or d < -PIXEL_DELTA:
                 changed += 1
-        return changed * 100.0 / FRAME_BYTES
+                px = i % WIDTH
+                py = i // WIDTH
+                if px < x0:
+                    x0 = px
+                if px > x1:
+                    x1 = px
+                if py < y0:
+                    y0 = py
+                if py > y1:
+                    y1 = py
+        score = changed * 100.0 / FRAME_BYTES
+        if not changed:
+            return score, None
+        return score, [
+            round(x0 / WIDTH, 3),
+            round(y0 / HEIGHT, 3),
+            round((x1 + 1) / WIDTH, 3),
+            round((y1 + 1) / HEIGHT, 3),
+        ]
+
+
+def _union(a: list[float] | None, b: list[float] | None) -> list[float] | None:
+    if not a:
+        return b
+    if not b:
+        return a
+    return [
+        min(a[0], b[0]), min(a[1], b[1]),
+        max(a[2], b[2]), max(a[3], b[3]),
+    ]

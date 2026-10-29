@@ -16,6 +16,9 @@ interface ApiService {
     @GET("/api/cameras")
     suspend fun getCameras(): CamerasRes
 
+    @GET("/api/cameras/{id}")
+    suspend fun getCamera(@Path("id") id: String): CameraRes
+
     @GET("/api/cameras/{id}/snapshot.jpg")
     suspend fun getSnapshot(
         @Path("id") id: String,
