@@ -75,6 +75,28 @@ Para desactivarla en una cámara concreta: `"analytics": { "objects": false }`.
 Desde la web puedes comprobar el estado en `GET /api/analytics` y probar una
 captura con `POST /api/cameras/<id>/detect`.
 
+#### Filtrar avisos de Telegram por tipo de evento
+
+En **Ajustes → Avisos → Telegram** puedes marcar qué categorías quieres
+recibir: **personas**, **vehículos**, **animales**, **objetos** o **solo
+movimiento**. Los avisos de ntfy y del webhook no se filtran.
+
+```json
+"alerts": {
+  "telegram": {
+    "enabled": true,
+    "token": "123456:ABC-DEF…",
+    "chat_id": "123456789",
+    "categories": ["persona", "vehiculo", "animal", "objeto", "movimiento"]
+  }
+}
+```
+
+- Una lista vacía (`[]`) desactiva los avisos de movimiento por Telegram.
+- Los mensajes de prueba (**Enviar prueba**) siempre se envían.
+- El filtro depende de la detección: si la analítica no reconoce el objeto
+  (por ejemplo de noche), el evento se clasifica como `movimiento`.
+
 ### Windows
 
 El proyecto incluye scripts para compilar un `.exe` con PyInstaller:

@@ -13,6 +13,30 @@ from pathlib import Path
 
 logger = logging.getLogger("vstarcam.alerts")
 
+# Categorías de evento que se pueden filtrar (deben coincidir con analytics.py).
+CATEGORIES = ("persona", "vehiculo", "animal", "objeto", "movimiento")
+
+
+def _telegram_categories(tg: dict) -> set[str]:
+    raw = tg.get("categories")
+    if raw is None:  # configuración antigua: sin filtro
+        return set(CATEGORIES)
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, (list, tuple, set)):
+        return set(CATEGORIES)
+    return {str(c).strip().lower() for c in raw if str(c).strip()}
+
+
+def telegram_allows(tg: dict, category: str = "") -> bool:
+    """Indica si un evento de esa categoría debe enviarse por Telegram.
+
+    Un mensaje sin categoría (prueba manual) siempre se permite.
+    """
+    if not category:
+        return True
+    return category.strip().lower() in _telegram_categories(tg)
+
 
 def _multipart(fields: dict[str, str], files: dict[str, Path]) -> tuple[bytes, str]:
     boundary = f"----vstarcam{uuid.uuid4().hex}"
@@ -40,7 +64,9 @@ class Alerter:
     def __init__(self, config) -> None:
         self.config = config
 
-    def send(self, title: str, message: str, image: Path | None = None) -> dict:
+    def send(
+        self, title: str, message: str, image: Path | None = None, category: str = ""
+    ) -> dict:
         cfg = self.config.get("alerts") or {}
         results = []
         ntfy = cfg.get("ntfy") or {}
@@ -48,21 +74,28 @@ class Alerter:
             results.append(("ntfy", self._ntfy(ntfy, title, message)))
         tg = cfg.get("telegram") or {}
         if tg.get("enabled") and tg.get("token") and tg.get("chat_id"):
-            results.append(("telegram", self._telegram(tg, title, message, image)))
+            if telegram_allows(tg, category):
+                results.append(("telegram", self._telegram(tg, title, message, image)))
+            else:
+                logger.debug("Telegram omite categoría %r", category)
         webhook = (cfg.get("webhook") or "").strip()
         if webhook:
             results.append(("webhook", self._webhook(webhook, title, message, image)))
         return {"results": [{"channel": c, "ok": ok, "error": err} for c, (ok, err) in results]}
 
     def enabled(self) -> bool:
+        return self.wants("")
+
+    def wants(self, category: str = "") -> bool:
+        """¿Hay algún canal dispuesto a enviar un evento de esta categoría?"""
         cfg = self.config.get("alerts") or {}
         ntfy = cfg.get("ntfy") or {}
+        if ntfy.get("enabled") and ntfy.get("topic"):
+            return True
         tg = cfg.get("telegram") or {}
-        return bool(
-            (ntfy.get("enabled") and ntfy.get("topic"))
-            or (tg.get("enabled") and tg.get("token"))
-            or (cfg.get("webhook") or "").strip()
-        )
+        if tg.get("enabled") and tg.get("token") and telegram_allows(tg, category):
+            return True
+        return bool((cfg.get("webhook") or "").strip())
 
     # --------------------------------------------------------------- canales
     def _ntfy(self, cfg: dict, title: str, message: str) -> tuple[bool, str]:

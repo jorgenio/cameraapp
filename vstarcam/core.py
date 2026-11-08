@@ -597,11 +597,12 @@ class CameraManager:
         description = analytics_mod.build_description(
             detections, zone=zone, motion_score=score
         )
+        category = analytics_mod.event_category(detections)
         meta = {
             "zone": zone,
             "bbox": info.get("bbox"),
             "score": round(score, 2),
-            "category": analytics_mod.event_category(detections),
+            "category": category,
         }
         try:
             if event_id:
@@ -625,13 +626,14 @@ class CameraManager:
 
         # El aviso sale antes del clip: grabar 15 s no debe retrasar la alerta.
         throttle = self._alert_throttle.setdefault(cam_id, Throttle(15))
-        if self.alerter.enabled() and throttle.ready():
+        if self.alerter.wants(category) and throttle.ready():
             image = snap_path if snap_ok else None
             self._pool.submit(
                 self.alerter.send,
                 f"{cam.get('name', cam_id)}",
                 description,
                 image,
+                category,
             )
 
         if cam.get("record", {}).get("mode") == "motion":

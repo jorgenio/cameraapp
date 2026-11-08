@@ -22,6 +22,15 @@
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
     }[c]));
 
+  // Categorías de evento que se pueden filtrar en Telegram.
+  const ALL_CATS = [
+    ["persona", "Personas"],
+    ["vehiculo", "Vehículos"],
+    ["animal", "Animales"],
+    ["objeto", "Objetos"],
+    ["movimiento", "Solo movimiento"],
+  ];
+
   /* ------------------------------------------------------------------ API */
   async function api(path, opts) {
     opts = opts || {};
@@ -1058,14 +1067,7 @@
 
     $("#set-save", overlay).onclick = async (ev) => {
       const btn = ev.currentTarget;
-      const patch = {};
-      $$("[data-key]", overlay).forEach((inp) => {
-        let v;
-        if (inp.type === "checkbox") v = inp.checked;
-        else if (inp.type === "number") v = inp.value === "" ? 0 : Number(inp.value);
-        else v = inp.value;
-        setDeep(patch, inp.dataset.key, v);
-      });
+      const patch = collectInputs(overlay);
       btn.disabled = true;
       try {
         await api("/api/settings", { method: "POST", body: patch });
@@ -1180,6 +1182,7 @@
     const a = s.alerts || {};
     const ntfy = a.ntfy || {};
     const tg = a.telegram || {};
+    const cats = Array.isArray(tg.categories) ? tg.categories : ALL_CATS.map((c) => c[0]);
     return `
       <div class="switch-row">
         <div class="txt"><b>ntfy</b><span>Notificación instantánea al móvil, gratis y sin cuenta</span></div>
@@ -1198,6 +1201,15 @@
       </div>
       <div class="field"><label>Token del bot</label><input type="text" data-key="alerts.telegram.token" value="${esc(tg.token || "")}" placeholder="123456:ABC-DEF…"></div>
       <div class="field"><label>Chat ID</label><input type="text" data-key="alerts.telegram.chat_id" value="${esc(tg.chat_id || "")}"></div>
+      <div class="field">
+        <label>Tipos de aviso que quieres recibir</label>
+        <div class="cats">
+          ${ALL_CATS.map(([value, label]) => `
+            <label class="cat"><input type="checkbox" data-key="alerts.telegram.categories" data-list value="${value}" ${cats.includes(value) ? "checked" : ""}><span>${label}</span></label>
+          `).join("")}
+        </div>
+        <span class="hint">Solo se enviarán por Telegram los eventos de estas categorías. Sin ninguna marcada no llegarán avisos de movimiento.</span>
+      </div>
 
       <div class="section-title">Webhook</div>
       <div class="field">
@@ -1216,15 +1228,7 @@
         cloudBtn.disabled = true;
         try {
           // Guarda primero lo que haya en el formulario
-          const patch = {};
-          $$("[data-key]", root).forEach((inp) => {
-            let v;
-            if (inp.type === "checkbox") v = inp.checked;
-            else if (inp.type === "number") v = Number(inp.value || 0);
-            else v = inp.value;
-            setDeep(patch, inp.dataset.key, v);
-          });
-          await api("/api/settings", { method: "POST", body: patch });
+          await api("/api/settings", { method: "POST", body: collectInputs(root) });
           const r = await api("/api/cloud/test", { method: "POST" });
           toast(r.ok ? "Nube: " + (r.message || "conexión correcta") : "Nube: " + (r.error || "error"), r.ok ? "ok" : "err");
         } catch (err) { toast(err.message, "err"); }
@@ -1246,15 +1250,30 @@
     }
   }
 
-  function s_alerts(root) {
-    const out = {};
-    $$("[data-key^='alerts.']", root).forEach((inp) => {
+  // Lee todos los campos del formulario. Los checkbox con data-list se agrupan
+  // en un array en la clave indicada (por ejemplo alerts.telegram.categories).
+  function collectInputs(root) {
+    const patch = {};
+    const lists = {};
+    $$("[data-key]", root).forEach((inp) => {
+      const key = inp.dataset.key;
       let v;
       if (inp.type === "checkbox") v = inp.checked;
+      else if (inp.type === "number") v = inp.value === "" ? 0 : Number(inp.value);
       else v = inp.value;
-      setDeep(out, inp.dataset.key.replace(/^alerts\./, ""), v);
+      if (inp.hasAttribute("data-list")) {
+        if (!lists[key]) lists[key] = [];
+        if (v) lists[key].push(inp.value);
+      } else {
+        setDeep(patch, key, v);
+      }
     });
-    return out;
+    Object.keys(lists).forEach((key) => setDeep(patch, key, lists[key]));
+    return patch;
+  }
+
+  function s_alerts(root) {
+    return collectInputs(root).alerts || {};
   }
 
   /* ------------------------------------------------------------------ boot */

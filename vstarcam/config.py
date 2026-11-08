@@ -70,7 +70,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "alerts": {
         "ntfy": {"enabled": False, "url": "https://ntfy.sh", "topic": ""},
-        "telegram": {"enabled": False, "token": "", "chat_id": ""},
+        "telegram": {
+            "enabled": False,
+            "token": "",
+            "chat_id": "",
+            # Categorías que se envían por Telegram (vacío = ningún aviso de movimiento).
+            "categories": ["persona", "vehiculo", "animal", "objeto", "movimiento"],
+        },
         "webhook": "",
     },
     "analytics": {
