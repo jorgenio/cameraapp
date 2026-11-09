@@ -120,13 +120,18 @@ class Recorder:
 
     @property
     def url(self) -> str:
+        return self.cam.get("record_url") or self.cam.get("rtsp_url") or ""
+
+    @property
+    def direct_url(self) -> str:
         return self.cam.get("rtsp_url") or ""
 
-    def _base_cmd(self, interactive: bool = False) -> list[str]:
+    def _base_cmd(self, interactive: bool = False, url: str | None = None) -> list[str]:
         cmd = [ffmpeg(), "-hide_banner", "-loglevel", "warning"]
         if not interactive:
             cmd.append("-nostdin")
-        if self.url.lower().startswith("rtsp"):
+        source = url or self.url
+        if source.lower().startswith("rtsp"):
             # Estas cámaras repiten DTS; con marcas de reloj la duración del
             # MP4 coincide con el tiempo real y los saltos desaparecen.
             cmd += [
@@ -134,7 +139,7 @@ class Recorder:
                 "-rtsp_transport", "tcp",
                 "-timeout", "10000000",
             ]
-        cmd += ["-i", self.url, "-map", "0:v:0"]
+        cmd += ["-i", source, "-map", "0:v:0"]
         if self.cam.get("audio", True):
             cmd += ["-map", "0:a:0?"]
         return cmd
@@ -254,25 +259,29 @@ class Recorder:
         out_dir = RECORDINGS / self.cam["id"] / day
         out_dir.mkdir(parents=True, exist_ok=True)
         out = out_dir / f"{self.cam['id']}_{tag}_{time.strftime('%Y%m%d_%H%M%S')}.mp4"
-        cmd = self._base_cmd() + self._codec_args() + [
-            "-t", str(max(2, seconds)),
-            "-movflags", "+faststart",
-            "-y", str(out),
-        ]
-        try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=seconds + 30)
-        except (subprocess.TimeoutExpired, OSError) as exc:
-            logger.warning("Clip falló %s: %s", self.cam["id"], exc)
-            return None
-        if out.exists() and out.stat().st_size > 1000:
-            return out
-        detail = (proc.stderr or "").strip().splitlines()
-        logger.warning(
-            "Clip vacío %s: %s",
-            self.cam["id"],
-            detail[-1] if detail else f"código {proc.returncode}",
-        )
-        out.unlink(missing_ok=True)
+        sources = [self.url]
+        if self.direct_url and self.direct_url != self.url:
+            sources.append(self.direct_url)
+        last_error = ""
+        for source in sources:
+            cmd = self._base_cmd(url=source) + self._codec_args() + [
+                "-t", str(max(2, seconds)),
+                "-movflags", "+faststart",
+                "-y", str(out),
+            ]
+            try:
+                proc = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=seconds + 30
+                )
+            except (subprocess.TimeoutExpired, OSError) as exc:
+                last_error = str(exc)
+                continue
+            if out.exists() and out.stat().st_size > 1000:
+                return out
+            detail = (proc.stderr or "").strip().splitlines()
+            last_error = detail[-1] if detail else f"código {proc.returncode}"
+            out.unlink(missing_ok=True)
+        logger.warning("Clip vacío %s: %s", self.cam["id"], last_error or "error desconocido")
         return None
 
 

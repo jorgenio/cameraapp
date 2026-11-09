@@ -49,6 +49,14 @@ class Go2RTC:
     def enabled(self) -> bool:
         return bool(self.config.get("go2rtc", "enabled", default=True)) and self.available
 
+    @property
+    def running(self) -> bool:
+        return bool(self.proc and self.proc.poll() is None)
+
+    def rtsp_url(self, name: str) -> str:
+        """URL del restream RTSP local (el puerto RTSP es api_port + 1)."""
+        return f"rtsp://127.0.0.1:{self.api_port + 1}/{name}"
+
     def _stream_name(self, cam: dict) -> str:
         return cam["id"]
 

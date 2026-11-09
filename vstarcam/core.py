@@ -133,21 +133,34 @@ class CameraManager:
             if mode == "continuous" and cam.get("rtsp_url"):
                 if rec is None or not rec.is_running():
                     rec = self._recorder(cam)
-                    rec.cam = cam
                     rec.start_continuous(int(cam["record"].get("segment_seconds", 300)))
             elif mode != "continuous" and rec is not None:
                 self._recorders.pop(cam["id"]).stop()
             elif rec is not None:
-                rec.cam = cam
+                rec.cam = self._source_cam(cam)
 
     # --------------------------------------------------------------- helpers
+    def _source_cam(self, cam: dict) -> dict:
+        """Copia la cámara apuntando la grabación al restream local de go2rtc.
+
+        Algunas cámaras solo aceptan dos conexiones RTSP a la vez (go2rtc y el
+        detector de movimiento ya usan una cada uno), así que abrir una tercera
+        para el clip devolvía «Invalid data». El restream reutiliza la conexión
+        que ya mantiene go2rtc.
+        """
+        source = dict(cam)
+        if self.go2rtc.enabled() and self.go2rtc.running and cam.get("rtsp_url"):
+            source["record_url"] = self.go2rtc.rtsp_url(cam["id"])
+        return source
+
     def _recorder(self, cam: dict) -> Recorder:
         with self._lock:
             rec = self._recorders.get(cam["id"])
+            source = self._source_cam(cam)
             if rec is None:
-                rec = Recorder(cam)
+                rec = Recorder(source)
                 self._recorders[cam["id"]] = rec
-            rec.cam = cam
+            rec.cam = source
             return rec
 
     def _detector(self, cam: dict) -> MotionDetector:
