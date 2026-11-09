@@ -10,7 +10,7 @@ import threading
 import time
 from pathlib import Path
 
-from .util import RECORDINGS, ensure_dirs, which
+from .util import LOG_DIR, RECORDINGS, ensure_dirs, which
 
 logger = logging.getLogger("vstarcam.ffmpeg")
 
@@ -113,6 +113,8 @@ class Recorder:
         self.cam = cam
         self.proc: subprocess.Popen | None = None
         self._lock = threading.Lock()
+        self._log_file = None
+        self._log_path: Path | None = None
         self.started_at: float | None = None
         self.current_dir: Path | None = None
 
@@ -120,14 +122,37 @@ class Recorder:
     def url(self) -> str:
         return self.cam.get("rtsp_url") or ""
 
-    def _base_cmd(self) -> list[str]:
-        cmd = [ffmpeg(), "-hide_banner", "-loglevel", "warning", "-nostdin"]
+    def _base_cmd(self, interactive: bool = False) -> list[str]:
+        cmd = [ffmpeg(), "-hide_banner", "-loglevel", "warning"]
+        if not interactive:
+            cmd.append("-nostdin")
         if self.url.lower().startswith("rtsp"):
-            cmd += ["-rtsp_transport", "tcp", "-timeout", "10000000"]
+            # Estas cámaras repiten DTS; con marcas de reloj la duración del
+            # MP4 coincide con el tiempo real y los saltos desaparecen.
+            cmd += [
+                "-use_wallclock_as_timestamps", "1",
+                "-rtsp_transport", "tcp",
+                "-timeout", "10000000",
+            ]
         cmd += ["-i", self.url, "-map", "0:v:0"]
         if self.cam.get("audio", True):
             cmd += ["-map", "0:a:0?"]
         return cmd
+
+    def _codec_args(self) -> list[str]:
+        """Copia el vídeo y convierte el audio a AAC.
+
+        El MP4 no admite G.711 (pcm_alaw/pcm_mulaw), que es el audio habitual
+        de estas cámaras: con ``-c copy`` ffmpeg abortaba al escribir la
+        cabecera y dejaba ficheros de 0 bytes.
+        """
+        if not self.cam.get("audio", True):
+            return ["-c:v", "copy", "-an"]
+        return [
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "64k", "-ar", "16000", "-ac", "1",
+            "-af", "aresample=async=1:first_pts=0",
+        ]
 
     def start_continuous(self, segment_seconds: int = 300) -> Path:
         with self._lock:
@@ -138,8 +163,7 @@ class Recorder:
             out_dir.mkdir(parents=True, exist_ok=True)
             self.current_dir = out_dir
             pattern = str(out_dir / f"{self.cam['id']}_%Y%m%d_%H%M%S.mp4")
-            cmd = self._base_cmd() + [
-                "-c", "copy",
+            cmd = self._base_cmd(interactive=True) + self._codec_args() + [
                 "-f", "segment",
                 "-segment_time", str(max(10, segment_seconds)),
                 "-segment_format", "mp4",
@@ -148,8 +172,13 @@ class Recorder:
                 "-movflags", "+faststart",
                 pattern,
             ]
+            LOG_DIR.mkdir(parents=True, exist_ok=True)
+            self._log_path = LOG_DIR / f"record_{self.cam['id']}.log"
+            self._log_file = open(self._log_path, "wb")
             logger.info("Grabación continua %s → %s", self.cam["id"], out_dir)
-            self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.proc = subprocess.Popen(
+                cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=self._log_file
+            )
             self.started_at = time.time()
             threading.Thread(target=self._watch, args=(self.proc,), daemon=True).start()
             return out_dir
@@ -160,8 +189,36 @@ class Recorder:
             if self.proc is proc:
                 self.proc = None
                 self.started_at = None
+        tail = ""
+        with self._lock:
+            if self._log_file:
+                try:
+                    self._log_file.close()
+                except OSError:
+                    pass
+                self._log_file = None
+            if self._log_path:
+                try:
+                    tail = self._log_path.read_text("utf-8", "replace").strip()[-400:]
+                except OSError:
+                    tail = ""
         if code not in (0, 255):
-            logger.warning("ffmpeg de grabación de %s terminó con código %s", self.cam["id"], code)
+            logger.warning(
+                "ffmpeg de grabación de %s terminó con código %s%s",
+                self.cam["id"], code, f": {tail}" if tail else "",
+            )
+        if self.current_dir:
+            self._cleanup_empty(self.current_dir)
+
+    @staticmethod
+    def _cleanup_empty(folder: Path) -> None:
+        """Borra los MP4 de 0 bytes que deja ffmpeg cuando falla al arrancar."""
+        try:
+            for f in folder.glob("*.mp4"):
+                if f.stat().st_size == 0:
+                    f.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     def stop(self) -> None:
         with self._lock:
@@ -169,11 +226,24 @@ class Recorder:
             self.proc = None
             self.started_at = None
         if proc and proc.poll() is None:
+            # "q" cierra el segmento actual y escribe el moov; SIGINT puede
+            # hacer que ffmpeg salga sin finalizar el MP4.
             try:
-                proc.send_signal(2)  # SIGINT: cierra el MP4 correctamente
-                proc.wait(timeout=8)
-            except (subprocess.TimeoutExpired, OSError):
-                proc.kill()
+                if proc.stdin:
+                    proc.stdin.write(b"q\n")
+                    proc.stdin.flush()
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                try:
+                    proc.send_signal(2)
+                    proc.wait(timeout=5)
+                except (subprocess.TimeoutExpired, OSError):
+                    proc.kill()
+            except (BrokenPipeError, OSError, ValueError):
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
 
     def is_running(self) -> bool:
         return bool(self.proc and self.proc.poll() is None)
@@ -184,19 +254,25 @@ class Recorder:
         out_dir = RECORDINGS / self.cam["id"] / day
         out_dir.mkdir(parents=True, exist_ok=True)
         out = out_dir / f"{self.cam['id']}_{tag}_{time.strftime('%Y%m%d_%H%M%S')}.mp4"
-        cmd = self._base_cmd() + [
+        cmd = self._base_cmd() + self._codec_args() + [
             "-t", str(max(2, seconds)),
-            "-c", "copy",
             "-movflags", "+faststart",
             "-y", str(out),
         ]
         try:
-            subprocess.run(cmd, capture_output=True, timeout=seconds + 30)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=seconds + 30)
         except (subprocess.TimeoutExpired, OSError) as exc:
             logger.warning("Clip falló %s: %s", self.cam["id"], exc)
             return None
         if out.exists() and out.stat().st_size > 1000:
             return out
+        detail = (proc.stderr or "").strip().splitlines()
+        logger.warning(
+            "Clip vacío %s: %s",
+            self.cam["id"],
+            detail[-1] if detail else f"código {proc.returncode}",
+        )
+        out.unlink(missing_ok=True)
         return None
 
 

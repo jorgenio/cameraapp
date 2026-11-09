@@ -673,7 +673,7 @@ class CameraManager:
                     st = path.stat()
                 except OSError:
                     continue
-                if st.st_mtime < cutoff:
+                if st.st_size == 0 or st.st_mtime < cutoff:
                     freed += st.st_size
                     path.unlink(missing_ok=True)
                     removed += 1
