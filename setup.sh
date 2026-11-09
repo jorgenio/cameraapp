@@ -138,5 +138,10 @@ for p in ffmpeg ffprobe go2rtc rclone; do
     printf '  · %-8s no instalado\n' "$p"
   fi
 done
+if command -v mega-put >/dev/null 2>&1; then
+  printf '  ✔ %-8s %s\n' "megacmd" "$(command -v mega-put)"
+else
+  printf '  · %-8s no instalado (opcional, nube MEGA: sudo apt install megacmd)\n' "megacmd"
+fi
 echo
 echo "Listo. Arranca con: ./run.sh"

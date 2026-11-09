@@ -60,12 +60,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "cloud": {
         "enabled": False,
-        "type": "webdav",  # webdav | rclone
+        "type": "webdav",  # webdav | rclone | megacmd
         "url": "",
         "username": "",
         "password": "",
         "folder": "vstarcam",
         "rclone_remote": "",
+        "mega_email": "",
+        "mega_password": "",
         "delete_after_upload": False,
     },
     "alerts": {

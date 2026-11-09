@@ -1,9 +1,10 @@
-"""Subida automática a la nube: WebDAV propio o rclone (Nextcloud, S3, Drive…)."""
+"""Subida automática a la nube: WebDAV, rclone o MEGAcmd."""
 
 from __future__ import annotations
 
 import base64
 import logging
+import subprocess
 import threading
 import urllib.error
 import urllib.parse
@@ -93,6 +94,8 @@ class CloudUploader:
         ctype = self.config.get("cloud", "type", default="webdav")
         if ctype == "rclone":
             self._upload_rclone(path)
+        elif ctype == "megacmd":
+            self._upload_megacmd(path)
         else:
             self._upload_webdav(path)
 
@@ -103,7 +106,6 @@ class CloudUploader:
         remote = (self.config.get("cloud", "rclone_remote", default="") or "").strip()
         if not remote:
             raise RuntimeError("Configura 'rclone_remote' (p. ej. minkube:Nextcloud/vstarcam)")
-        import subprocess
 
         target = remote.rstrip("/") + "/" + self._relative(path)
         proc = subprocess.run(
@@ -112,6 +114,77 @@ class CloudUploader:
         )
         if proc.returncode != 0:
             raise RuntimeError((proc.stderr or "").strip()[-300:] or "rclone falló")
+
+    # ------------------------------------------------------------- MEGAcmd
+    def _mega_argv(self, command: str, *args: str) -> list[str] | None:
+        """Construye la orden usando mega-<cmd> o mega-exec <cmd>."""
+        exe = which(f"mega-{command}")
+        if exe:
+            return [exe, *args]
+        exe = which("mega-exec")
+        if exe:
+            return [exe, command, *args]
+        return None
+
+    def _mega_run(self, command: str, *args: str, timeout: float = 60,
+                  check: bool = True) -> subprocess.CompletedProcess:
+        argv = self._mega_argv(command, *args)
+        if not argv:
+            raise RuntimeError("MEGAcmd no está instalado (paquete 'megacmd')")
+        try:
+            proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"mega-{command} tardó demasiado en responder") from exc
+        if check and proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "").strip()[-300:]
+            raise RuntimeError(detail or f"mega-{command} falló (código {proc.returncode})")
+        return proc
+
+    def _mega_mkdir(self, remote_dir: str) -> None:
+        if not self._mega_argv("mkdir"):
+            return
+        proc = self._mega_run("mkdir", "-p", remote_dir, timeout=180, check=False)
+        if proc.returncode == 0:
+            return
+        detail = (proc.stderr or proc.stdout or "").strip()[-300:]
+        # MEGAcmd devuelve error si la carpeta ya existe; no es un fallo real.
+        if "already exists" in detail.lower():
+            return
+        raise RuntimeError(detail or f"mega-mkdir falló (código {proc.returncode})")
+
+    def _mega_logged_in(self) -> bool:
+        argv = self._mega_argv("whoami")
+        if not argv:
+            return False
+        try:
+            proc = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return proc.returncode == 0
+
+    def _mega_ensure_login(self) -> None:
+        if self._mega_logged_in():
+            return
+        email = str(self.config.get("cloud", "mega_email", default="") or "").strip()
+        password = str(self.config.get("cloud", "mega_password", default="") or "")
+        if not email or not password:
+            raise RuntimeError(
+                "MEGAcmd no ha iniciado sesión. Configura el email y la contraseña "
+                "de MEGA, o ejecuta 'mega-login' una vez en una terminal."
+            )
+        self._mega_run("login", email, password, timeout=180)
+
+    def _mega_remote_dir(self, path: Path) -> str:
+        folder = (self.config.get("cloud", "folder", default="vstarcam") or "").strip("/")
+        parent = Path(self._relative(path)).parent
+        parts = [p for p in [folder, *parent.parts] if p and p != "."]
+        return "/" + "/".join(parts)
+
+    def _upload_megacmd(self, path: Path) -> None:
+        self._mega_ensure_login()
+        remote_dir = self._mega_remote_dir(path)
+        self._mega_mkdir(remote_dir)
+        self._mega_run("put", "-c", str(path), remote_dir, timeout=1800)
 
     def _upload_webdav(self, path: Path) -> None:
         base = (self.config.get("cloud", "url", default="") or "").strip()
@@ -161,7 +234,6 @@ class CloudUploader:
             exe = which("rclone")
             if not exe:
                 return {"ok": False, "error": "rclone no instalado"}
-            import subprocess
 
             remote = (self.config.get("cloud", "rclone_remote", default="") or "").strip()
             if not remote:
@@ -172,6 +244,17 @@ class CloudUploader:
             if proc.returncode != 0:
                 return {"ok": False, "error": (proc.stderr or "").strip()[-300:]}
             return {"ok": True, "message": "rclone accesible"}
+
+        if cfg_type == "megacmd":
+            if not self._mega_argv("whoami"):
+                return {"ok": False, "error": "MEGAcmd no instalado (paquete 'megacmd')"}
+            try:
+                self._mega_ensure_login()
+                folder = (self.config.get("cloud", "folder", default="vstarcam") or "").strip("/")
+                self._mega_mkdir(f"/{folder}")
+                return {"ok": True, "message": "MEGAcmd conectado y carpeta creada"}
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "error": str(exc)}
 
         url = (self.config.get("cloud", "url", default="") or "").rstrip("/")
         if not url:

@@ -359,14 +359,17 @@ class Handler(BaseHTTPRequestHandler):
                 cfg = mgr.config.get()
                 cfg.pop("cameras", None)
                 cloud = cfg.get("cloud", {})
-                if cloud.get("password"):
-                    cloud["password"] = "********"
+                for secret in ("password", "mega_password"):
+                    if cloud.get(secret):
+                        cloud[secret] = "********"
                 return self.send_json({"settings": cfg})
             if method == "POST":
                 data = self.read_json()
                 cloud = data.get("cloud")
-                if isinstance(cloud, dict) and cloud.get("password") == "********":
-                    cloud.pop("password")
+                if isinstance(cloud, dict):
+                    for secret in ("password", "mega_password"):
+                        if cloud.get(secret) == "********":
+                            cloud.pop(secret, None)
                 mgr.config.update(data)
                 mgr.apply_changes()
                 return self.send_json({"ok": True})

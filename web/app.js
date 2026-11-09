@@ -1151,24 +1151,45 @@
         <select data-key="cloud.type">
           <option value="webdav" ${c.type === "webdav" ? "selected" : ""}>WebDAV (Nextcloud, ownCloud, NAS…)</option>
           <option value="rclone" ${c.type === "rclone" ? "selected" : ""}>rclone (Drive, S3, Dropbox…) con remoto configurado</option>
+          <option value="megacmd" ${c.type === "megacmd" ? "selected" : ""}>MEGA (mega-cmd, sin configurar rclone)</option>
         </select>
       </div>
       <div class="field">
         <label>Carpeta remota</label>
         <input type="text" data-key="cloud.folder" value="${esc(c.folder || "vstarcam")}" placeholder="vstarcam">
+        <span class="hint">Carpeta raíz donde se guardarán las capturas y grabaciones.</span>
       </div>
-      <div class="section-title">WebDAV</div>
-      <div class="field"><label>URL del servidor</label>
-        <input type="text" data-key="cloud.url" value="${esc(c.url || "")}" placeholder="https://nube.ejemplo.com/remote.php/dav/files/usuario"></div>
-      <div class="grid-2">
-        <div class="field"><label>Usuario</label><input type="text" data-key="cloud.username" value="${esc(c.username || "")}"></div>
-        <div class="field"><label>Contraseña</label><input type="password" data-key="cloud.password" value="${esc(c.password || "")}"></div>
+
+      <div data-cloud-group="webdav" ${c.type === "webdav" ? "" : "hidden"}>
+        <div class="section-title">WebDAV</div>
+        <div class="field"><label>URL del servidor</label>
+          <input type="text" data-key="cloud.url" value="${esc(c.url || "")}" placeholder="https://nube.ejemplo.com/remote.php/dav/files/usuario"></div>
+        <div class="grid-2">
+          <div class="field"><label>Usuario</label><input type="text" data-key="cloud.username" value="${esc(c.username || "")}"></div>
+          <div class="field"><label>Contraseña</label><input type="password" data-key="cloud.password" value="${esc(c.password || "")}"></div>
+        </div>
       </div>
-      <div class="section-title">rclone</div>
-      <div class="field">
-        <label>Remoto y ruta</label>
-        <input type="text" data-key="cloud.rclone_remote" value="${esc(c.rclone_remote || "")}" placeholder="minkube:Nextcloud/vstarcam">
-        <span class="hint">Configura el remoto una vez con <code>rclone config</code>. Aquí solo el destino.</span>
+
+      <div data-cloud-group="rclone" ${c.type === "rclone" ? "" : "hidden"}>
+        <div class="section-title">rclone</div>
+        <div class="field">
+          <label>Remoto y ruta</label>
+          <input type="text" data-key="cloud.rclone_remote" value="${esc(c.rclone_remote || "")}" placeholder="minkube:Nextcloud/vstarcam">
+          <span class="hint">Configura el remoto una vez con <code>rclone config</code>. Aquí solo el destino.</span>
+        </div>
+      </div>
+
+      <div data-cloud-group="megacmd" ${c.type === "megacmd" ? "" : "hidden"}>
+        <div class="section-title">MEGAcmd</div>
+        <div class="grid-2">
+          <div class="field"><label>Email de MEGA</label>
+            <input type="email" data-key="cloud.mega_email" value="${esc(c.mega_email || "")}" placeholder="tu@email.com"></div>
+          <div class="field"><label>Contraseña</label>
+            <input type="password" data-key="cloud.mega_password" value="${esc(c.mega_password || "")}"></div>
+        </div>
+        <p class="hint">Requiere <a href="https://mega.io/es/cmd" target="_blank" rel="noopener">MEGAcmd</a> instalado (<code>sudo apt install megacmd</code> en Ubuntu).
+          Si ya iniciaste sesión con <code>mega-login</code>, puedes dejar estos campos vacíos.
+          Con verificación en dos pasos, ejecuta <code>mega-login</code> una vez en una terminal.</p>
       </div>
       <div class="switch-row">
         <div class="txt"><b>Borrar en local tras subir</b><span>Ahorra disco; el vídeo queda solo en la nube</span></div>
@@ -1222,6 +1243,7 @@
   }
 
   function wireTestButtons(root, box, tab) {
+    if (tab === "cloud") wireCloudType(box);
     const cloudBtn = $("#test-cloud", box);
     if (cloudBtn) {
       cloudBtn.onclick = async () => {
@@ -1248,6 +1270,17 @@
         finally { alertsBtn.disabled = false; }
       };
     }
+  }
+
+  // Muestra solo los campos del método de nube seleccionado.
+  function wireCloudType(box) {
+    const sel = $("[data-key='cloud.type']", box);
+    if (!sel) return;
+    const sync = () => $$("[data-cloud-group]", box).forEach((el) => {
+      el.hidden = el.dataset.cloudGroup !== sel.value;
+    });
+    sel.onchange = sync;
+    sync();
   }
 
   // Lee todos los campos del formulario. Los checkbox con data-list se agrupan

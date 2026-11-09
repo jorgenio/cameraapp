@@ -18,7 +18,7 @@ Aplicación local para visualizar, controlar PTZ, grabar, detectar movimiento y 
 - **Capturas**: Guardado automático y manual
 - **Eventos**: Historial con descripción, filtros por tipo y galería
 - **Alertas**: Telegram, ntfy, webhook
-- **Subida a nube**: WebDAV / rclone (MEGA, FTP, S3, etc.)
+- **Subida a nube**: WebDAV / rclone / MEGAcmd (MEGA, Nextcloud, Drive, S3, FTP…)
 - **Escaneo ONVIF**: Descubrimiento automático en red local
 - **Acceso por red local**: Todo corre en local
 
@@ -96,6 +96,38 @@ movimiento**. Los avisos de ntfy y del webhook no se filtran.
 - Los mensajes de prueba (**Enviar prueba**) siempre se envían.
 - El filtro depende de la detección: si la analítica no reconoce el objeto
   (por ejemplo de noche), el evento se clasifica como `movimiento`.
+
+#### Subida a la nube
+
+En **Ajustes → Nube** eliges el método de subida: **WebDAV**, **rclone** o
+**MEGAcmd**.
+
+- **WebDAV**: Nextcloud, ownCloud, NAS…
+- **rclone**: Drive, S3, Dropbox… con un remoto configurado previamente.
+- **MEGAcmd**: sube directamente a tu cuenta MEGA sin configurar rclone.
+
+Para MEGAcmd instala el paquete `megacmd` (en Ubuntu: `sudo apt install megacmd`;
+en Windows, el instalador oficial de [MEGAcmd](https://mega.io/es/cmd) y asegúrate
+de que quede en el `PATH`). Después puedes:
+
+1. Configurar el email y la contraseña de MEGA en **Ajustes → Nube**, o
+2. Ejecutar `mega-login` una vez en una terminal (útil si usas verificación en
+   dos pasos). En ese caso deja los campos vacíos.
+
+```json
+"cloud": {
+  "enabled": true,
+  "type": "megacmd",
+  "folder": "vstarcam",
+  "mega_email": "tu@email.com",
+  "mega_password": "...",
+  "delete_after_upload": false
+}
+```
+
+Las capturas y grabaciones se guardan dentro de la carpeta remota indicada,
+manteniendo la estructura de `data/`. La contraseña se guarda en `config.json`,
+igual que la de WebDAV.
 
 ### Windows
 
